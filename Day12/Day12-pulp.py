@@ -3,6 +3,8 @@
 
 # In[ ]:
 
+from pulp import *
+SLV = None #pulp.PULP_CBC_CMD(msg=False, warmStart=True)
 
 from pathlib import Path
 from time import time
@@ -112,7 +114,22 @@ S
 # In[ ]:
 
 
-num2Shape( 256 ^ 502 )
+def llt(a,b):
+    for i,j in zip(a,b):
+        if i>=j:
+            return False
+    return True
+def lle(a,b):
+    for i,j in zip(a,b):
+        if i>j:
+            return False
+    return True
+
+
+# In[ ]:
+
+
+
 
 
 # **Part One**
@@ -120,20 +137,42 @@ num2Shape( 256 ^ 502 )
 # In[ ]:
 
 
-from pulp import *
+from functools import cmp_to_key
+
 
 startTime = time()
 count = 0
+cache = {}
 
-for t in range(len(trees)):
+st = 0
+ed = 100
+tmp = trees[st:ed]
+tmp.sort(key=cmp_to_key(lle))
+trees[st:ed] = tmp
+
+for t in range(st,ed):
 
     h, w = trees[t][0]
     solve = LpProblem("TreeProblem-%s"%t)
-    
+
     # variables: T[x,y,s] = 1 <==> there is a tile s at pos x,y
     #T = {(i,j,s):Int("T__%s,%s,%s" % (i,j,s)) for s in S for j in range(w) for i in range(h) }
     T = LpVariable.dicts("T", (range(-1,h+1),range(-1,w+1),S), cat="Binary")
-    
+
+    # find old sol for warm start
+    best = (0,0,0,0,0,0,0,0)
+    for k in cache.keys():
+        # grid is smaller or equal, and number of presents is better
+        if lle(k[:2], trees[t][0]) and lle(best[2:], k[2:]):
+            best = k
+
+    # warm start the solver
+    if best != (0,0,0,0,0,0,0,0):
+        print("\n\n\n\n#########################\n", t, "Warm START:",trees[t], "from", best, "\n#########################\n\n\n\n")
+        oldsol = cache[best]
+        for k in oldsol:
+            T[k[0]][k[1]][k[2]].setInitialValue(1)
+
     # Tiles cannot be positioned on the edges
     for i in range(-1,h+1):
         for s in S:
@@ -147,50 +186,38 @@ for t in range(len(trees)):
             T[0][j][s] = 0
             T[h-1][j][s] = 0
             T[h][j][s] = 0
-            
-    # the T's are 0 or 1
-    for i in range(1,h-1):
-        for j in range(1,w-1):
-            for s in S:
-                solve+=(T[i][j][s]>=0)
-                solve+=(T[i][j][s]<=1)
 
     # only one s at each x,y
     for i in range(h):
         for j in range(w):
-            solve+=(sum(T[i][j][s] for s in S)<=1)
+            solve+=(lpSum(T[i][j][s] for s in S)<=1)
 
     # exactly the correct number of each s
     for k in range(len(shapes)):
-        solve+=(sum(sum(T[i][j][s] for i in range(h) for j in range(w)) for s in Slist[k]) == trees[t][1][k])
+        solve+=(lpSum(lpSum(T[i][j][s] for i in range(h) for j in range(w)) for s in Slist[k]) == trees[t][1][k])
 
     # no overlaps
     for i in range(h):
         for j in range(w):
-            solve+=( sum( sum(T[i+masks[k][0]][j+masks[k][1]][s]*((s//2**k)%2) for s in S) for k in range(9)) <= 1 )
-    
-    solve.solve()
+            solve+=( lpSum( lpSum(T[i+masks[k][0]][j+masks[k][1]][s]*((s//2**k)%2) for s in S) for k in range(9)) <= 1 )
+
+    solve.solve(SLV)
     if solve.status > 0:
         count+=1
-                                               
-print("%s s"%(time()-startTime))  
+        # cache solution
+        sol = []
+        for i in range(1,h-1):
+            for j in range(1,w-1):
+                for s in S:
+                    if T[i][j][s].value() != 0.0 :
+                        sol.append((i,j,s))
+        cache[(trees[t][0][0],trees[t][0][1],
+               trees[t][1][0],trees[t][1][1],trees[t][1][2],trees[t][1][5],trees[t][1][4],trees[t][1][5])] = sol
+
+    print("\n\n\n\n#########################\n", t, count, "\n#########################\n\n\n\n")
+
 ans1 = count
 
-
-# In[ ]:
-print("\n\n\n\n\n\n\n")
-
-print("ans1 = %s"%ans1)
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
+print("%s s"%(time()-startTime))
+ans1
 
